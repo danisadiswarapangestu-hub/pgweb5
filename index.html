@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet JS - WebGIS</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Menghilangkan scrollbar */
+        }
+
+        #map {
+            width: 100vw;
+            height: 100vh; /* Membuat peta fullscreen penuh 1 layar */
+        }
+
+        .legend {
+            padding: 8px 12px;
+            background: white;
+            line-height: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            font-family: Arial, sans-serif;
+            font-size: 13px;
+        }
+
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 8px;
+            opacity: 0.8;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="map"></div>
+
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // =====================================================
+        // INISIALISASI PETA
+        // =====================================================
+        var map = L.map("map").setView([-8.2848467, 123.1649780], 10);
+
+        // =====================================================
+        // BASEMAP
+        // =====================================================
+        var basemap = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        });
+        basemap.addTo(map);
+
+        // =====================================================
+        // FUNGSI LOGIKA GAMBAR DITAMPILKAN BERDASARKAN NAMA
+        // =====================================================
+        function getGambarToponimi(feature) {
+            // 1. Cek jika GeoJSON sudah punya atribut image
+            if (feature.properties && feature.properties.image) {
+                return "images/" + feature.properties.image;
+            }
+
+            // 2. Pencocokan dinamis berdasarkan atribut TOPONIMI
+            var nama = (feature.properties && feature.properties.TOPONIMI) ? feature.properties.TOPONIMI.toUpperCase() : "";
+
+            if (nama.includes("BOLENG")) return "images/gunung-ile-boleng.jpg";
+            if (nama.includes("LEWERO")) return "images/gunung-ile-lewero.jpg";
+            if (nama.includes("LEWOTOBI")) return "images/gunung-ile-lewotobi-perempuan.jpg";
+            if (nama.includes("MANDIRI")) return "images/gunung-ile-mandiri.jpg";
+
+            // Fallback default gambar jika tidak sesuai kata kunci
+            return "images/gunung-ile-mandiri.jpg";
+        }
+
+        // =====================================================
+        // GEOJSON POINT TOPONIMI
+        // =====================================================
+        var toponimi = L.geoJSON(null, {
+            pointToLayer: function (feature, latlng) {
+                return L.marker(latlng, {
+                    icon: L.icon({
+                        iconUrl: "home_marker.png", // Disesuaikan lokasi file home_marker.png di root
+                        iconSize: [48, 48],
+                        iconAnchor: [24, 48],
+                        popupAnchor: [0, -48],
+                        tooltipAnchor: [-16, -30]
+                    })
+                });
+            },
+            onEachFeature: function (feature, layer) {
+                var nama = feature.properties.TOPONIMI || "Tidak ada nama";
+                var coords = feature.geometry.coordinates;
+                var imgSrc = getGambarToponimi(feature);
+
+                var popup_content = "<b>Nama:</b> " + nama + "<br>" +
+                    "<b>Koordinat:</b> " + coords[1] + ", " + coords[0] + "<br><br>" +
+                    "<img src='" + imgSrc + "' alt='" + nama + "' width='200' style='border-radius:6px;'>";
+
+                // Binding Popup & Tooltip secara langsung
+                layer.bindPopup(popup_content);
+                layer.bindTooltip(nama, {
+                    direction: "left",
+                    sticky: true
+                });
+            }
+        });
+
+        // LOAD GEOJSON TOPONIMI
+        $.getJSON("GeoJSON/toponimi.geojson", function (data) {
+            toponimi.addData(data);
+            map.addLayer(toponimi);
+        }).fail(function () {
+            console.log("File toponimi.geojson tidak ditemukan!");
+        });
+
+        // =====================================================
+        // GEOJSON LINE JALAN (Ubah Warna Ke Hijau)
+        // =====================================================
+        var jalan = L.geoJSON(null, {
+            style: function () {
+                return {
+                    color: "#2e7d32", // Warna Hijau (Green)
+                    weight: 3,
+                    opacity: 0.9
+                };
+            }
+        });
+
+        // LOAD GEOJSON JALAN
+        $.getJSON("GeoJSON/jalan.geojson", function (data) {
+            jalan.addData(data);
+            map.addLayer(jalan);
+        }).fail(function () {
+            console.log("File jalan.geojson tidak ditemukan!");
+        });
+
+        // =====================================================
+        // GRADUATED SYMBOLOGY JUMLAH PENDUDUK (SKEMA OCEAN TEAL)
+        // =====================================================
+        function getColor(penduduk) {
+            return penduduk > 34380 ? "#004d40" :
+                penduduk > 27064 ? "#00796b" :
+                penduduk > 19748 ? "#009688" :
+                penduduk > 12432 ? "#4db6ac" :
+                "#b2dfdb";
+        }
+
+        var jumlah_penduduk = L.geoJSON(null, {
+            style: function (feature) {
+                var penduduk = Number(feature.properties.Penduduk);
+                return {
+                    fillColor: getColor(penduduk),
+                    color: "black",
+                    weight: 1,
+                    fillOpacity: 0.7
+                };
+            },
+            onEachFeature: function (feature, layer) {
+                var penduduk = Number(feature.properties.Penduduk);
+                layer.bindPopup(
+                    "<b>" + feature.properties.WADMKC + "</b><br><br>" +
+                    "Jumlah Penduduk: " + penduduk.toLocaleString("id-ID") + " jiwa"
+                );
+            }
+        });
+
+        // LOAD GEOJSON JUMLAH PENDUDUK
+        $.getJSON("GeoJSON/jumlah_penduduk.geojson", function (data) {
+            jumlah_penduduk.addData(data);
+            map.addLayer(jumlah_penduduk);
+            map.fitBounds(jumlah_penduduk.getBounds());
+        }).fail(function () {
+            console.log("File jumlah_penduduk.geojson tidak ditemukan!");
+        });
+
+        // =====================================================
+        // LAYER CONTROL
+        // =====================================================
+        var baseMaps = {
+            "OpenStreetMap": basemap
+        };
+
+        var overlayMaps = {
+            "Toponimi": toponimi,
+            "Jalan": jalan,
+            "Jumlah Penduduk": jumlah_penduduk
+        };
+
+        L.control.layers(baseMaps, overlayMaps, { collapsed: false }).addTo(map);
+
+        // =====================================================
+        // LEGEND (WARNA TEAL - OCEAN)
+        // =====================================================
+        var legend = L.control({ position: "bottomright" });
+
+        legend.onAdd = function () {
+            var div = L.DomUtil.create("div", "legend");
+            div.innerHTML =
+                "<b>Jumlah Penduduk</b><br>" +
+                '<i style="background:#b2dfdb"></i> 5.117 – 12.433<br>' +
+                '<i style="background:#4db6ac"></i> 12.433 – 19.749<br>' +
+                '<i style="background:#009688"></i> 19.749 – 27.064<br>' +
+                '<i style="background:#00796b"></i> 27.064 – 34.380<br>' +
+                '<i style="background:#004d40"></i> > 34.380';
+            return div;
+        };
+
+        legend.addTo(map);
+    </script>
+
+</body>
+
+</html>
